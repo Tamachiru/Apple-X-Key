@@ -19,9 +19,9 @@ jobs:
           python -c "
           import random, string, requests, os
 
-          # 1. Generate an Apple X key (Ex: APPLEX-A7B9Z2)
-          random_chars = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-          daily_key = f'APPLEX-{random_chars}'
+          # 1. Generate an Apple X key (Ex: APPLEX0NHG56KYTBCV1) - 13 random characters
+          random_chars = ''.join(random.choices(string.ascii_uppercase + string.digits, k=13))
+          daily_key = f'APPLEX{random_chars}'
 
           # 2. Write key to key.txt
           with open('key.txt', 'w') as f:
