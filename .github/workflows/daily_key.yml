@@ -2,8 +2,8 @@ name: 🍏 Apple X — Daily Key Generator
 
 on:
   schedule:
-    - cron: '0 0 * * *'      # Midnight UTC — generates a new key
-    - cron: '15,45 * * * *'  # Every 30 min (:15 and :45) — refreshes the embed
+    - cron: '0 0 * * *'
+    - cron: '15,45 * * * *'
   workflow_dispatch:
     inputs:
       mode:
@@ -12,8 +12,8 @@ on:
         default: 'generate'
         type: choice
         options:
-          - generate   # Generate a new key + update embed
-          - refresh    # Only refresh the embed (keep current key)
+          - generate
+          - refresh
 
 permissions:
   contents: write
@@ -79,14 +79,15 @@ jobs:
 
           # ── UTC timestamps ────────────────────────────────────────────
           now_utc = datetime.now(timezone.utc)
-          date_str = now_utc.strftime("%A, %B %d %Y")
           time_str = now_utc.strftime("%H:%M UTC")
 
-          # Next midnight UTC as Unix timestamp (for Discord dynamic timestamp)
           next_midnight = (now_utc + timedelta(days=1)).replace(
               hour=0, minute=0, second=0, microsecond=0
           )
-          expire_unix = int(next_midnight.timestamp())
+          expire_str  = next_midnight.strftime("%B %d, %Y at 00:00 UTC")
+          hours_left  = int((next_midnight - now_utc).total_seconds() // 3600)
+          mins_left   = int(((next_midnight - now_utc).total_seconds() % 3600) // 60)
+          time_left   = f"{hours_left}h {mins_left:02d}m remaining"
 
           # ── Parse webhook URL ─────────────────────────────────────────
           webhook_url = os.environ.get("WEBHOOK_URL")
@@ -110,36 +111,31 @@ jobs:
                   },
                   "title": "🔑  Daily Access Key",
                   "description": (
-                      f"Your key for **{date_str}**\n"
-                      f"```\n{daily_key}\n```"
+                      f"-# {now_utc.strftime('%A, %B %d %Y')}\n"
+                      f"```fix\n{daily_key}\n```\n"
+                      f"-# ⚠️  Do not share this key — Come back daily to keep your access."
                   ),
                   "color": 0x57F287,
                   "fields": [
                       {
                           "name": "🕛  Resets at",
-                          "value": "Every day at **00:00 UTC**",
+                          "value": "**00:00 UTC** daily",
                           "inline": True
                       },
                       {
-                          "name": "📅  Valid until",
-                          # <t:UNIX:R> = live relative countdown ("in 14 hours")
-                          # <t:UNIX:F> = full date display
-                          "value": f"<t:{expire_unix}:F>\n<t:{expire_unix}:R>",
+                          "name": "📅  Expires on",
+                          "value": f"**{expire_str}**",
                           "inline": True
                       },
                       {
-                          "name": "\u200b",
-                          "value": (
-                              "> ⚠️  **Do not share this key.**\n"
-                              "> Come back daily to keep your access."
-                          ),
-                          "inline": False
+                          "name": "⏳  Time left",
+                          "value": f"**{time_left}**",
+                          "inline": True
                       }
                   ],
                   "footer": {
                       "text": f"{'Refreshed' if mode == 'refresh' else 'Generated'} at {time_str}  ·  Apple X"
-                  },
-                  "timestamp": now_utc.isoformat()
+                  }
               }]
           }
 
