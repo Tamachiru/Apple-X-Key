@@ -34,8 +34,7 @@ jobs:
           desc = 'Here is your access key for today:\n\n# ' + daily_key + '\n\n*⚠️ This key will expire in 24 hours. Make sure to check this channel daily to get the new key and maintain your access.*'
           
           data = {
-              'username': 'Apple X Security',
-              'avatar_url': 'https://i.imgur.com/k2A78hM.png',
+              'username': 'Apple X | KEY',
               'embeds': [{
                   'title': '🍏 Apple X | Daily Access Key',
                   'description': desc,
