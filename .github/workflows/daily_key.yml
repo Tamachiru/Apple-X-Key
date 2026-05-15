@@ -47,7 +47,6 @@ jobs:
           CHARSET = string.ascii_uppercase + string.digits
 
           if mode == "refresh":
-              # Read current key from key.txt
               try:
                   with open("key.txt", "r") as f:
                       daily_key = f.read().strip()
@@ -56,7 +55,6 @@ jobs:
                   print("❌ key.txt not found — cannot refresh, run 'generate' first.", file=sys.stderr)
                   sys.exit(1)
           else:
-              # Generate a brand new key
               random_part = ''.join(random.SystemRandom().choices(CHARSET, k=13))
               daily_key = f"APPLEX{random_part}"
               with open("key.txt", "w") as f:
@@ -65,8 +63,9 @@ jobs:
 
           # ── UTC timestamp ─────────────────────────────────────────────
           now_utc = datetime.now(timezone.utc)
-          date_str = now_utc.strftime("%A, %B %d %Y")
-          expire_str = now_utc.strftime("%m/%d/%Y at 00:00 UTC")
+          date_str    = now_utc.strftime("%A, %B %d %Y")
+          expire_str  = now_utc.strftime("%m/%d/%Y at 00:00 UTC")
+          time_str    = now_utc.strftime("%H:%M UTC")
 
           # ── Parse webhook URL ─────────────────────────────────────────
           webhook_url = os.environ.get("WEBHOOK_URL")
@@ -74,50 +73,54 @@ jobs:
               print("❌ WEBHOOK_URL is missing", file=sys.stderr)
               sys.exit(1)
 
-          parts = webhook_url.rstrip("/").split("/")
+          parts         = webhook_url.rstrip("/").split("/")
           webhook_token = parts[-1]
           webhook_id    = parts[-2]
 
           MESSAGE_ID = "1504920316219097160"
-          edit_url = f"https://discord.com/api/webhooks/{webhook_id}/{webhook_token}/messages/{MESSAGE_ID}"
+          edit_url   = f"https://discord.com/api/webhooks/{webhook_id}/{webhook_token}/messages/{MESSAGE_ID}"
 
           # ── Build embed ───────────────────────────────────────────────
-          description = (
-              f"Here is your access key for today:\n\n"
-              f"# {daily_key}\n\n"
-              f"*⚠️ This key expires on **{expire_str}**. "
-              f"Check this channel every day to get the new key and keep your access.*"
-          )
-
           payload = {
+              "username": "Apple X | KEY",
               "embeds": [{
-                  "title": "🍏 Apple X — Daily Access Key",
-                  "description": description,
-                  "color": 0x000000,
+                  "author": {
+                      "name": "Apple X Premium — Security System"
+                  },
+                  "title": "🔑  Daily Access Key",
+                  "description": (
+                      f"Your key for **{date_str}**\n"
+                      f"```\n{daily_key}\n```"
+                  ),
+                  "color": 0x57F287,
                   "fields": [
                       {
-                          "name": "📅 Date",
-                          "value": date_str,
+                          "name": "🕛  Resets at",
+                          "value": "Every day at **00:00 UTC**",
                           "inline": True
                       },
                       {
-                          "name": "⏰ Generated at",
-                          "value": now_utc.strftime("%H:%M UTC"),
+                          "name": "📅  Valid until",
+                          "value": expire_str,
                           "inline": True
                       },
                       {
-                          "name": "⌛ Expires in",
-                          "value": "24 hours",
-                          "inline": True
+                          "name": "\u200b",
+                          "value": (
+                              "> ⚠️  **Do not share this key.**\n"
+                              "> Come back daily to keep your access."
+                          ),
+                          "inline": False
                       }
                   ],
                   "footer": {
-                      "text": f"Apple X Premium · {'Embed refreshed' if mode == 'refresh' else 'Automated 24H Security System'} · UTC"
+                      "text": f"{'Refreshed' if mode == 'refresh' else 'Generated'} at {time_str}  ·  Apple X Premium"
                   },
                   "timestamp": now_utc.isoformat()
               }]
           }
 
+          # ── PATCH the existing message ────────────────────────────────
           response = requests.patch(edit_url, json=payload, timeout=10)
           response.raise_for_status()
           print(f"✅ Discord embed updated (status {response.status_code})")
