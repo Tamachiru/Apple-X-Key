@@ -1,54 +1,118 @@
-name: Apple X Daily Key Generator
+name: 🍏 Apple X — Daily Key Generator
 
 on:
   schedule:
-    - cron: '0 0 * * *' # Executes every day at Midnight UTC
-  workflow_dispatch: 
+    - cron: '0 0 * * *'  # Midnight UTC (1AM Paris winter / 2AM Paris summer)
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual trigger'
+        required: false
+        default: 'Manual test'
+
+permissions:
+  contents: write
 
 jobs:
-  update-key:
+  generate-key:
+    name: Generate & Broadcast Daily Key
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Generate Key & Send to Discord
+      - name: Generate Key & Edit Discord Embed
         env:
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         run: |
-          python -c "
-          import random, string, requests, os
+          python3 << 'EOF'
+          import random
+          import string
+          import requests
+          import os
+          import sys
+          from datetime import datetime, timezone
 
-          # 1. Generate an Apple X key (Ex: APPLEX0NHG56KYTBCV1) - 13 random characters
-          random_chars = ''.join(random.choices(string.ascii_uppercase + string.digits, k=13))
-          daily_key = 'APPLEX' + random_chars
+          # ── Key generation ────────────────────────────────────────────
+          CHARSET = string.ascii_uppercase + string.digits
+          random_part = ''.join(random.SystemRandom().choices(CHARSET, k=13))
+          daily_key = f"APPLEX{random_part}"
 
-          # 2. Write key to key.txt
-          with open('key.txt', 'w') as f:
+          # ── UTC timestamp ─────────────────────────────────────────────
+          now_utc = datetime.now(timezone.utc)
+          date_str = now_utc.strftime("%A, %B %d %Y")
+          expire_str = now_utc.strftime("%m/%d/%Y at 00:00 UTC")
+
+          # ── Save key locally ──────────────────────────────────────────
+          with open("key.txt", "w") as f:
               f.write(daily_key)
+          print(f"✅ Key generated: {daily_key}")
 
-          # 3. Send Discord Embed (English)
-          webhook_url = os.environ.get('WEBHOOK_URL')
-          
-          # Adding the '#' for giant text in Discord
-          desc = 'Here is your access key for today:\n\n# ' + daily_key + '\n\n*⚠️ This key will expire in 24 hours. Make sure to check this channel daily to get the new key and maintain your access.*'
-          
-          data = {
-              'username': 'Apple X | KEY',
-              'embeds': [{
-                  'title': '🍏 Apple X | Daily Access Key',
-                  'description': desc,
-                  'color': 0,
-                  'footer': {'text': 'Apple X Premium - Automated 24H Security System'}
+          # ── Parse webhook URL to extract ID & token ───────────────────
+          # Format: https://discord.com/api/webhooks/{id}/{token}
+          webhook_url = os.environ.get("WEBHOOK_URL")
+          if not webhook_url:
+              print("❌ WEBHOOK_URL is missing", file=sys.stderr)
+              sys.exit(1)
+
+          parts = webhook_url.rstrip("/").split("/")
+          webhook_token = parts[-1]
+          webhook_id    = parts[-2]
+
+          # ── Message to edit ───────────────────────────────────────────
+          MESSAGE_ID = "1504920316219097160"
+          edit_url = f"https://discord.com/api/webhooks/{webhook_id}/{webhook_token}/messages/{MESSAGE_ID}"
+
+          # ── Build embed payload ───────────────────────────────────────
+          description = (
+              f"Here is your access key for today:\n\n"
+              f"# {daily_key}\n\n"
+              f"*⚠️ This key expires on **{expire_str}**. "
+              f"Check this channel every day to get the new key and keep your access.*"
+          )
+
+          payload = {
+              "embeds": [{
+                  "title": "🍏 Apple X — Daily Access Key",
+                  "description": description,
+                  "color": 0x000000,
+                  "fields": [
+                      {
+                          "name": "📅 Date",
+                          "value": date_str,
+                          "inline": True
+                      },
+                      {
+                          "name": "⏰ Generated at",
+                          "value": now_utc.strftime("%H:%M UTC"),
+                          "inline": True
+                      },
+                      {
+                          "name": "⌛ Expires in",
+                          "value": "24 hours",
+                          "inline": True
+                      }
+                  ],
+                  "footer": {
+                      "text": "Apple X Premium · Automated 24H Security System · UTC"
+                  },
+                  "timestamp": now_utc.isoformat()
               }]
           }
-          requests.post(webhook_url, json=data)
-          "
-          
-      - name: Save key.txt to GitHub
+
+          # ── PATCH the existing message ────────────────────────────────
+          response = requests.patch(edit_url, json=payload, timeout=10)
+          response.raise_for_status()
+          print(f"✅ Discord embed updated (status {response.status_code})")
+          EOF
+
+      - name: Commit & Push key.txt
         run: |
-          git config --global user.name "Apple X Bot"
+          git config --global user.name  "Apple X Bot"
           git config --global user.email "bot@applex.com"
           git add key.txt
-          git commit -m "Auto-update daily key" || echo "No changes"
+          git diff --cached --quiet && echo "⚠️ No changes to commit" && exit 0
+          git commit -m "chore: update daily key [$(date -u +'%Y-%m-%d %H:%M UTC')]"
           git push
