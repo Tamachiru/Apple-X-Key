@@ -21,7 +21,7 @@ jobs:
 
           # 1. Generate an Apple X key (Ex: APPLEX0NHG56KYTBCV1) - 13 random characters
           random_chars = ''.join(random.choices(string.ascii_uppercase + string.digits, k=13))
-          daily_key = f'APPLEX{random_chars}'
+          daily_key = 'APPLEX' + random_chars
 
           # 2. Write key to key.txt
           with open('key.txt', 'w') as f:
@@ -29,12 +29,16 @@ jobs:
 
           # 3. Send Discord Embed (English)
           webhook_url = os.environ.get('WEBHOOK_URL')
+          
+          # Adding the '#' for giant text in Discord
+          desc = 'Here is your access key for today:\n\n# ' + daily_key + '\n\n*⚠️ This key will expire in 24 hours. Make sure to check this channel daily to get the new key and maintain your access.*'
+          
           data = {
               'username': 'Apple X Security',
               'avatar_url': 'https://i.imgur.com/k2A78hM.png',
               'embeds': [{
                   'title': '🍏 Apple X | Daily Access Key',
-                  'description': f'Here is your access key for today:\n\n**`{daily_key}`**\n\n*⚠️ This key will expire in 24 hours. Make sure to check this channel daily to get the new key and maintain your access.*',
+                  'description': desc,
                   'color': 0,
                   'footer': {'text': 'Apple X Premium - Automated 24H Security System'}
               }]
