@@ -121,15 +121,15 @@ jobs:
                   f.write(obfuscated_key)
               print(f"✅ New key generated & encrypted in file")
 
-          # ── UTC timestamps & Discord ──────────────────────────────────
+          # ── TIMESTAMPS DISCORD DYNAMIQUES ─────────────────────────────
           now_utc = datetime.now(timezone.utc)
           time_str = now_utc.strftime("%H:%M UTC")
 
+          # Calcul du prochain minuit (UTC)
           next_midnight = (now_utc + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-          expire_str = next_midnight.strftime("%B %d, %Y at 00:00 UTC")
-          hours_left = int((next_midnight - now_utc).total_seconds() // 3600)
-          mins_left  = int(((next_midnight - now_utc).total_seconds() % 3600) // 60)
-          time_left  = f"{hours_left}h {mins_left:02d}m remaining"
+          
+          # Convertir en timestamp UNIX (ex: 1778968800)
+          midnight_ts = int(next_midnight.timestamp())
 
           webhook_url = os.environ.get("WEBHOOK_URL")
           if not webhook_url:
@@ -160,11 +160,11 @@ jobs:
                   ),
                   "color": 0x57F287,
                   "image": {
-                      "url": "https://tr.rbxcdn.com/180DAY-35cc236165c857f9747112addef6db71/768/432/Image/Webp/noFilter"
+                      "url": "LIEN_DE_TON_IMAGE_ICI" # <--- N'OUBLIE PAS DE METTRE TON LIEN D'IMAGE ICI
                   },
                   "fields": [
-                      {"name": "📅  Expires on", "value": f"**{expire_str}**", "inline": True},
-                      {"name": "⏳  Time left", "value": f"**{time_left}**", "inline": True}
+                      {"name": "📅  Expires on", "value": f"<t:{midnight_ts}:f>", "inline": True},
+                      {"name": "⏳  Time left", "value": f"<t:{midnight_ts}:R>", "inline": True}
                   ],
                   "footer": {"text": f"{'Refreshed' if mode == 'refresh' else 'Generated'} at {time_str}  ·  Apple X"}
               }],
