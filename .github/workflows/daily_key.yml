@@ -175,10 +175,15 @@ jobs:
       - name: Commit & Push changes
         if: ${{ steps.detect-mode.outputs.mode != 'refresh' }}
         run: |
-          git config --global user.name  "Apple X Bot"
+          git config --global user.name "Apple X Bot"
           git config --global user.email "bot@applex.com"
-          git add key.txt
-          git add message_id.txt --ignore-unmatch
-          git diff --cached --quiet && echo "⚠️ No changes to commit" && exit 0
-          git commit -m "chore: secure daily key update"
-          git push
+          # On ajoute les fichiers s'ils existent
+          if [ -f key.txt ]; then git add key.txt; fi
+          if [ -f message_id.txt ]; then git add message_id.txt; fi
+          # On vérifie s'il y a quelque chose à commiter
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: secure daily key update"
+            git push
+          else
+            echo "⚠️ No changes to commit"
+          fi
