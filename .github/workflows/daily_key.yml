@@ -55,6 +55,7 @@ jobs:
           import requests
           import os
           import sys
+          import base64
           from datetime import datetime, timezone, timedelta
 
           mode = os.environ.get("MODE", "generate")
@@ -66,17 +67,28 @@ jobs:
           if mode == "refresh" or mode == "new-embed":
               try:
                   with open("key.txt", "r") as f:
-                      daily_key = f.read().strip()
-                  print(f"🔁 Reusing existing key: {daily_key}")
+                      obfuscated_key = f.read().strip()
+                  
+                  # Tentative de décodage (au cas où l'ancienne clé était en clair, on met un fallback)
+                  try:
+                      daily_key = base64.b64decode(obfuscated_key).decode('utf-8')
+                  except Exception:
+                      daily_key = obfuscated_key
+                      
+                  print(f"🔁 Reusing existing key (decoded for Discord)")
               except FileNotFoundError:
                   print("❌ key.txt not found — run 'generate' first.", file=sys.stderr)
                   sys.exit(1)
           else:
               random_part = ''.join(random.SystemRandom().choices(CHARSET, k=13))
               daily_key = f"APPLEX{random_part}"
+              
+              # Obfuscation de la clé en Base64 avant de la sauvegarder dans le repo
+              obfuscated_key = base64.b64encode(daily_key.encode('utf-8')).decode('utf-8')
+              
               with open("key.txt", "w") as f:
-                  f.write(daily_key)
-              print(f"✅ New key generated: {daily_key}")
+                  f.write(obfuscated_key)
+              print(f"✅ New key generated & obfuscated in file")
 
           # ── UTC timestamps ────────────────────────────────────────────
           now_utc = datetime.now(timezone.utc)
