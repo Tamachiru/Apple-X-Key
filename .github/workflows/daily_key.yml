@@ -1,4 +1,4 @@
-name: 🍏 Apple X — Daily Key Generator
+name: Daily Key Gen
 
 on:
   schedule:
@@ -6,169 +6,142 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Action to perform'
+        description: 'Run mode'
         required: true
         default: 'generate'
         type: choice
         options:
-          - generate        # New key + update embed
-          - new-embed       # Send a new message, delete the old one, save new ID
-          - encrypt-current # 🔒 ONLY encrypts the current key.txt (No Discord update)
+          - generate
+          - new-embed
+          - encrypt-current
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   contents: write
 
 jobs:
-  generate-key:
-    name: Generate & Broadcast Daily Key
+  update-key:
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Detect mode from schedule
-        id: detect-mode
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Setup dependencies
+        run: pip install -q requests
+
+      - name: Parse run mode
+        id: parse-mode
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            echo "mode=generate" >> $GITHUB_OUTPUT
+            echo "mode=generate" >> "$GITHUB_OUTPUT"
           else
-            echo "mode=${{ github.event.inputs.mode || 'generate' }}" >> $GITHUB_OUTPUT
+            echo "mode=${{ inputs.mode || 'generate' }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Generate Key & Edit Discord Embed
+      - name: Run key generation script
         env:
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
           SECRET_PASSWORD: ${{ secrets.SECRET_PASSWORD }}
-          MODE: ${{ steps.detect-mode.outputs.mode }}
+          RUN_MODE: ${{ steps.parse-mode.outputs.mode }}
         run: |
           python3 << 'EOF'
-          import random
-          import string
-          import requests
-          import os
-          import sys
-          import base64
+          import base64, os, random, string, sys, requests
           from datetime import datetime, timezone, timedelta
 
-          mode = os.environ.get("MODE", "generate")
-          print(f"▶️  Mode: {mode}")
+          mode = os.environ.get("RUN_MODE", "generate")
+          secret = os.environ.get("SECRET_PASSWORD")
+          webhook = os.environ.get("WEBHOOK_URL")
 
-          # ── SECRET PASSWORD
-          SECRET_PASSWORD = os.environ.get("SECRET_PASSWORD")
-          
-          if not SECRET_PASSWORD:
-              print("❌ ERROR : SECRET PASSWORD")
-              sys.exit(1)
+          if not secret:
+              sys.exit("Error: Missing secret password in environment.")
 
-          CHARSET = string.ascii_uppercase + string.digits
-
-          def encrypt_xor(text, key):
+          def xor_cipher(text, key):
               return bytes([ord(c) ^ ord(key[i % len(key)]) for i, c in enumerate(text)])
 
-          def decrypt_xor(data_bytes, key):
-              return "".join([chr(b ^ ord(key[i % len(key)])) for i, b in enumerate(data_bytes)])
+          def xor_decipher(data, key):
+              return "".join([chr(b ^ ord(key[i % len(key)])) for i, b in enumerate(data)])
 
-          # ── MODE : ENCRYPT CURRENT
+          # Handle local encryption only
           if mode == "encrypt-current":
-              try:
-                  with open("key.txt", "r") as f:
-                      content = f.read().strip()
+              if not os.path.exists("key.txt"):
+                  sys.exit("Error: key.txt not found.")
                   
-                  if content.startswith("APPLEX"):
-                      xor_encrypted = encrypt_xor(content, SECRET_PASSWORD)
-                      obfuscated_key = base64.b64encode(xor_encrypted).decode('utf-8')
-                      with open("key.txt", "w") as f:
-                          f.write(obfuscated_key)
-                      print("✅ File key.txt obfuscated successfully! (Discord ignored)")
-                  else:
-                      print("⚠️ The file does not start with APPLEX. Already encrypted?")
-              except FileNotFoundError:
-                  print("❌ key.txt not found.")
-              
+              with open("key.txt", "r") as f:
+                  current_val = f.read().strip()
+                  
+              if current_val.startswith("APPLEX"):
+                  encoded = base64.b64encode(xor_cipher(current_val, secret)).decode('utf-8')
+                  with open("key.txt", "w") as f:
+                      f.write(encoded)
               sys.exit(0)
 
-          # ── OTHER MODES : NEW-EMBED OR GENERATE
+          daily_key = ""
+          
+          # Read existing or generate new key
           if mode == "new-embed":
               try:
                   with open("key.txt", "r") as f:
-                      obfuscated_key = f.read().strip()
-                  
+                      raw_data = f.read().strip()
                   try:
-                      xor_bytes = base64.b64decode(obfuscated_key)
-                      test_key = decrypt_xor(xor_bytes, SECRET_PASSWORD)
-                      if test_key.startswith("APPLEX"):
-                          daily_key = test_key
-                      else:
-                          daily_key = obfuscated_key
-                  except Exception:
-                          daily_key = obfuscated_key
-                          
+                      decoded_key = xor_decipher(base64.b64decode(raw_data), secret)
+                      daily_key = decoded_key if decoded_key.startswith("APPLEX") else raw_data
+                  except:
+                      daily_key = raw_data
               except FileNotFoundError:
-                  print("❌ key.txt not found.", file=sys.stderr)
-                  sys.exit(1)
+                  sys.exit("Error: key.txt not found.")
           else:
-              random_part = ''.join(random.SystemRandom().choices(CHARSET, k=13))
-              daily_key = f"APPLEX{random_part}"
+              chars = string.ascii_uppercase + string.digits
+              rnd_str = ''.join(random.SystemRandom().choices(chars, k=13))
+              daily_key = f"APPLEX{rnd_str}"
               
-              xor_encrypted = encrypt_xor(daily_key, SECRET_PASSWORD)
-              obfuscated_key = base64.b64encode(xor_encrypted).decode('utf-8')
-              
+              encoded = base64.b64encode(xor_cipher(daily_key, secret)).decode('utf-8')
               with open("key.txt", "w") as f:
-                  f.write(obfuscated_key)
-              print(f"✅ New key generated & encrypted in file")
+                  f.write(encoded)
 
-          # ── DYNAMIC DISCORD TIMESTAMPS ────────────────────────────────
-          now_utc = datetime.now(timezone.utc)
-          time_str = now_utc.strftime("%H:%M UTC")
+          if not webhook:
+              sys.exit("Error: WEBHOOK_URL is missing.")
 
-          # Calculate next midnight (UTC)
-          next_midnight = (now_utc + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-          
-          # Convert to UNIX timestamp
-          midnight_ts = int(next_midnight.timestamp())
-
-          webhook_url = os.environ.get("WEBHOOK_URL")
-          if not webhook_url:
-              print("❌ WEBHOOK_URL secret is missing!")
-              sys.exit(1)
-
-          parts = webhook_url.rstrip("/").split("/")
+          # Format webhook URL
+          parts = webhook.rstrip("/").split("/")
           base_url = f"https://discord.com/api/webhooks/{parts[-2]}/{parts[-1]}"
 
-          message_id = None
-          try:
+          msg_id = None
+          if os.path.exists("message_id.txt"):
               with open("message_id.txt", "r") as f:
-                  message_id = f.read().strip()
-          except FileNotFoundError:
-              pass
+                  msg_id = f.read().strip()
 
-          # ── GHOST PING SYSTEM (MENTION & DELETE) ──────────────────────
+          # Ghost ping logic
           if mode == "generate":
               try:
-                  print("👻 Sending ghost ping...")
-                  TARGET_ROLE_ID = "1498644211858411663"
-                  ping_payload = {"content": f"<@&{TARGET_ROLE_ID}>"} 
-                  ping_resp = requests.post(f"{base_url}?wait=true", json=ping_payload, timeout=10)
-                  
-                  if ping_resp.ok:
-                      ping_id = str(ping_resp.json()["id"])
-                      requests.delete(f"{base_url}/messages/{ping_id}", timeout=10)
-                      print("✅ Ghost ping sent and deleted successfully.")
-                  else:
-                      print(f"⚠️ Ghost ping failed: {ping_resp.text}")
-              except Exception as e:
-                  print(f"⚠️ Error during ghost ping: {e}")
+                  ping_res = requests.post(
+                      f"{base_url}?wait=true", 
+                      json={"content": "<@&1498644211858411663>"}, 
+                      timeout=10
+                  )
+                  if ping_res.ok:
+                      requests.delete(f"{base_url}/messages/{ping_res.json()['id']}", timeout=10)
+              except Exception:
+                  pass # Fail silently if ping fails
 
-          # ── DISCORD MESSAGE ──────────────────────────────
-          IMAGE_URL = "https://tr.rbxcdn.com/180DAY-35cc236165c857f9747112addef6db71/768/432/Image/Webp/noFilter"
+          # Timestamps
+          now = datetime.now(timezone.utc)
+          next_mid = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+          mid_ts = int(next_mid.timestamp())
 
-          embed_content = {
+          img_url = "https://tr.rbxcdn.com/180DAY-35cc236165c857f9747112addef6db71/768/432/Image/Webp/noFilter"
+
+          embed = {
               "author": {"name": "Apple X — Security System"},
               "title": "🔑 Daily Access Key — Highway Legends",
               "description": (
-                  f"-# {now_utc.strftime('%A, %B %d %Y')}\n"
+                  f"-# {now.strftime('%A, %B %d %Y')}\n"
                   f"```fix\n{daily_key}\n```\n"
                   f"**📜 Script:**\n"
                   f"```lua\nloadstring(game:HttpGet(\"https://raw.githubusercontent.com/Tamachiru/AppleX/refs/heads/main/Game4\"))()\n```\n"
@@ -176,57 +149,52 @@ jobs:
               ),
               "color": 0x57F287,
               "fields": [
-                  {"name": "📅  Expires on", "value": f"<t:{midnight_ts}:f>", "inline": True},
-                  {"name": "⏳  Time left", "value": f"<t:{midnight_ts}:R>", "inline": True}
+                  {"name": "📅  Expires on", "value": f"<t:{mid_ts}:f>", "inline": True},
+                  {"name": "⏳  Time left", "value": f"<t:{mid_ts}:R>", "inline": True}
               ],
-              "footer": {"text": f"Generated at {time_str}  ·  Apple X"}
+              "footer": {"text": f"Generated at {now.strftime('%H:%M UTC')}  ·  Apple X"}
           }
 
-          if IMAGE_URL.startswith("http"):
-              embed_content["image"] = {"url": IMAGE_URL}
+          if img_url.startswith("http"):
+              embed["image"] = {"url": img_url}
 
-          embed_payload = {
+          payload = {
               "username": "Apple X | KEY",
-              "embeds": [embed_content],
+              "embeds": [embed],
               "components": [{
                   "type": 1,
-                  "components": [
-                      {
-                          "type": 2,
-                          "label": "🎮 Play Game",
-                          "style": 5,
-                          "url": "https://www.roblox.com/fr/games/15288629078/Highway-Legends"
-                      }
-                  ]
+                  "components": [{
+                      "type": 2,
+                      "label": "🎮 Play Game",
+                      "style": 5,
+                      "url": "https://www.roblox.com/fr/games/15288629078/Highway-Legends"
+                  }]
               }]
           }
 
-          if mode == "new-embed" or message_id is None:
-              resp = requests.post(f"{base_url}?wait=true", json=embed_payload, timeout=10)
-              if not resp.ok:
-                  print(f"❌ Discord Error: {resp.text}")
-              resp.raise_for_status()
-              new_message_id = str(resp.json()["id"])
-              if message_id:
-                  requests.delete(f"{base_url}/messages/{message_id}", timeout=10)
+          # Update or send new embed
+          if mode == "new-embed" or not msg_id:
+              r = requests.post(f"{base_url}?wait=true", json=payload, timeout=10)
+              r.raise_for_status()
+              
+              if msg_id:
+                  requests.delete(f"{base_url}/messages/{msg_id}", timeout=10)
+                  
               with open("message_id.txt", "w") as f:
-                  f.write(new_message_id)
+                  f.write(str(r.json()["id"]))
           else:
-              resp = requests.patch(f"{base_url}/messages/{message_id}", json=embed_payload, timeout=10)
-              if not resp.ok:
-                  print(f"❌ Discord Error: {resp.text}")
-              resp.raise_for_status()
+              r = requests.patch(f"{base_url}/messages/{msg_id}", json=payload, timeout=10)
+              r.raise_for_status()
           EOF
 
-      - name: Commit & Push changes
+      - name: Commit state
         run: |
-          git config --global user.name "Apple X Bot"
-          git config --global user.email "bot@applex.com"
-          if [ -f key.txt ]; then git add key.txt; fi
-          if [ -f message_id.txt ]; then git add message_id.txt; fi
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          
+          git add key.txt message_id.txt 2>/dev/null || true
+          
           if ! git diff --cached --quiet; then
-            git commit -m "chore: secure daily key update"
+            git commit -m "chore: update daily key [skip ci]"
             git push
-          else
-            echo "⚠️ No changes to commit"
           fi
